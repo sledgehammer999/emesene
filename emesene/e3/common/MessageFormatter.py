@@ -1,3 +1,21 @@
+# -*- coding: utf-8 -*-
+
+#    This file is part of emesene.
+#
+#    emesene is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    emesene is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with emesene; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 import time
 import xml.sax.saxutils
 
@@ -16,6 +34,7 @@ class MessageFormatter(object):
     %DISPLAYNAME%: the alias if exist otherwise the nick if exist
         otherwise the account
     %TIME%: the time of the message
+    %SHORTTIME%: the time of the message in format HH:MM:SS
     %MESSAGE%: the message with format
     %RAWMESSAGE%: the message without format
     %STATUS%: the status of the account
@@ -40,20 +59,21 @@ class MessageFormatter(object):
 
         # default formats
         self.incoming = '<div class="message-incomming">'\
-            '<b>%DISPLAYNAME%</b>: %MESSAGE%%NL%</div>'
+            '<b>%DISPLAYNAME%</b>:%NL%    [%SHORTTIME%] %MESSAGE%%NL%</div>'
         self.outgoing = '<div class="message-outgoing">'\
-            '<b>%DISPLAYNAME%</b>: %MESSAGE%%NL%</div>'
+            '<b>%DISPLAYNAME%</b>:%NL%    [%SHORTTIME%] %MESSAGE%%NL%</div>'
         self.consecutive_incoming = '<div class="consecutive-incomming">'\
-            '    %MESSAGE%%NL%</div>'
+            '    [%SHORTTIME%] %MESSAGE%%NL%</div>'
         self.consecutive_outgoing = '<div class="consecutive-outgoing">'\
-            '    %MESSAGE%%NL%</div>'
+            '    [%SHORTTIME%] %MESSAGE%%NL%</div>'
         self.offline_incoming = \
-            '<i>(offline message)</i><b>%DISPLAYNAME%</b>: %MESSAGE%%NL%'
+            '<i>(offline message)</i><b>%DISPLAYNAME%</b>:%NL%    [%SHORTTIME%] %MESSAGE%%NL%'
         self.information = '<i>%MESSAGE%</i>%NL%'
         self.error = \
             '<span style="color: #A52A2A;"><b>%MESSAGE%</b></span>%NL%'
         self.nudge = \
             '<i>%DISPLAYNAME% sent you a nudge!</i>%NL%'
+        self.outgoing_nudge = '<i>'+_('You just sent a nudge!')+'</i>%NL%'
         self.history = '<div class="message-history">'\
             '<b>%TIME% %NICK%</b>: %MESSAGE%%NL%</div>'
 
@@ -87,7 +107,7 @@ class MessageFormatter(object):
         template = template.replace('%MESSAGE%', message)
         return template
 
-    def format(self, contact, message_type=None):
+    def format(self, contact, message_type=None, timestamp_override=None):
         '''format the message according to the template'''
         if message_type is None:
             message_type=e3.Message.TYPE_MESSAGE
@@ -117,11 +137,22 @@ class MessageFormatter(object):
                     template = self.outgoing
                 else:
                     template = self.incoming
+
+        if message_type == e3.Message.TYPE_FLNMSG:
+            template = self.offline_incoming
+            timestamp = timestamp_override
+
         if message_type == e3.Message.TYPE_NUDGE:
-            template = self.nudge
+            if outgoing:
+                template = self.outgoing_nudge
+            else:
+                template = self.nudge
+                
             self.last_message_sender = None
 
+
         formated_time = time.strftime('%c', time.gmtime(timestamp))
+        formated_short_time = time.strftime('%X', time.localtime(timestamp))
 
         template = template.replace('%NICK%',
             escape(contact.nick))
@@ -133,6 +164,8 @@ class MessageFormatter(object):
             escape(contact.display_name))
         template = template.replace('%TIME%',
             escape(formated_time))
+        template = template.replace('%SHORTTIME%',
+            escape(formated_short_time))
         template = template.replace('%STATUS%',
             escape(e3.status.STATUS[contact.status]))
         template = template.replace('%PERSONALMESSAGE%',

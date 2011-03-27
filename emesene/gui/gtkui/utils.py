@@ -1,7 +1,27 @@
 '''utility module'''
+# -*- coding: utf-8 -*-
+
+#    This file is part of emesene.
+#
+#    emesene is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    emesene is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with emesene; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 import os
 import gtk
 import pango
+import hashlib
+import tempfile
 
 import e3
 
@@ -12,6 +32,16 @@ def safe_gtk_image_load(path, size=None):
     if file_readable(path):
         pixbuf = safe_gtk_pixbuf_load(path, size)
         return gtk.image_new_from_pixbuf(pixbuf)
+    else:
+        return gtk.image_new_from_stock(gtk.STOCK_MISSING_IMAGE,
+            gtk.ICON_SIZE_DIALOG)
+
+def gtk_ico_image_load(path, icosize=None):
+    '''try to return a gtk image from path, if fails, return a broken image'''
+    if file_readable(path):
+        pixbuf = gtk_pixbuf_load(path)
+        iconset = gtk.IconSet(pixbuf)
+        return gtk.image_new_from_icon_set(iconset,icosize)
     else:
         return gtk.image_new_from_stock(gtk.STOCK_MISSING_IMAGE,
             gtk.ICON_SIZE_DIALOG)
@@ -40,6 +70,28 @@ def safe_gtk_pixbuf_load(path, size=None, animated=False):
             return pixbuf
     else:
         return None
+
+
+def gtk_pixbuf_load(path, size=None, animated=False):
+    '''try to return a gtk pixbuf from path, if fails, return None'''
+    path = os.path.abspath(path)
+
+    if animated:
+        creator = gtk.gdk.PixbufAnimation
+    else:
+        creator = gtk.gdk.pixbuf_new_from_file
+
+    if file_readable(path):
+
+        pixbuf = creator(path)
+
+        if size is not None:
+            width, height = size
+            pixbuf = pixbuf.scale_simple(width, height,gtk.gdk.INTERP_BILINEAR)
+        return pixbuf
+    else:
+        return None
+
 
 def scale_nicely(pixbuf):
     '''scale a pixbuf'''
@@ -89,4 +141,49 @@ def pango_font_description_to_style(fdesc):
 
     return e3.Style(font, e3.Color(0, 0, 0), font_bold,
         font_italic, font_underline, font_strike, font_size)
+
+def simple_animation_scale(path,width, height):
+    f = open(path, 'r')
+    pixloader = gtk.gdk.PixbufLoader('gif')
+    pixloader.set_size(width, height)
+    pixloader.write(f.read())
+    pixloader.close()
+    return pixloader.get_animation()
+
+def simple_animation_overlap(animation,pixbuf_dest):
+    iter = animation.get_iter()
+    while not iter.on_currently_loading_frame():
+        
+        pixx=iter.get_pixbuf()
+        simple_images_overlap(pixx,pixbuf_dest,-pixbuf_dest.props.width,-pixbuf_dest.props.width)
+        iter.advance()
+
+
+def simple_images_overlap(pixbuf_src,pixbuf_dest,x,y):
+    if x>=0 :
+         xstart=0
+    else:
+         xstart=pixbuf_src.props.height
+
+    if y>=0 :
+         ystart=0
+    else:
+         ystart=pixbuf_src.props.height
+
+    pixbuf_dest.composite(pixbuf_src, 0, 0, pixbuf_src.props.width, pixbuf_src.props.height, xstart+x, ystart+y, 1.0, 1.0, gtk.gdk.INTERP_HYPER, 255)
+    
+
+def makePreview(src):
+
+    pbf = gtk_pixbuf_load(src,(96,96))
+
+    filetmp = tempfile.mkstemp(prefix=hashlib.md5(src).hexdigest(), suffix=hashlib.md5(src).hexdigest())[1]
+
+    pbf.save(filetmp,"png")
+    
+    out_file = open(filetmp,"rb")
+    cnt = out_file.read()
+    out_file.close()
+
+    return cnt
 

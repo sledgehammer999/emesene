@@ -1,21 +1,40 @@
+# -*- coding: utf-8 -*-
+
+#    This file is part of emesene.
+#
+#    emesene is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    emesene is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with emesene; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 import extension
 
 WEBKITERROR = False
 INDICATORERROR = False
+INFOBARERROR = False
+PYNOTIFYERROR = False
 
 def gtk_main(Controller):
     """ main method for gtk frontend
     """
-    global WEBKITERROR, INDICATORERROR
+    global WEBKITERROR, INDICATORERROR, INFOBARERROR, PYNOTIFYERROR
 
     import gtk
     import gobject
 
     import AccountMenu
     import Avatar
-    import AvatarManager
     import AvatarChooser
+    import CallWidget
     import config_gtk
     import ContactMenu
     import ContactList
@@ -30,17 +49,31 @@ def gtk_main(Controller):
     import FileTransferWidget
     import GroupMenu
     import GtkNotification
+    try:
+        import PyNotification
+        import ThemeNotification
+    except ImportError:
+        PYNOTIFYERROR = True
+
     import Header
     import ImageAreaSelector
     import ImageChooser
+
     try:
         import Indicator
     except ImportError:
         INDICATORERROR = True
+
     import Login
     import MainMenu
     import MainWindow
+
+    try:
+        import InfoBar
+    except ImportError:
+        INFOBARERROR = True
     import NiceBar
+
     import PluginWindow
     import Preferences
     import Renderers
@@ -50,10 +83,13 @@ def gtk_main(Controller):
     import TrayIcon
     import UserPanel
     import Window
+
     try:
         import AdiumTextBox
     except ImportError:
         WEBKITERROR = True
+    
+    import PictureHandler
 
     setup()
     gobject.threads_init()
@@ -77,35 +113,41 @@ def setup():
     """
     define all the components for a gtk environment
     """
-    global WEBKITERROR, INDICATORERROR
+    global WEBKITERROR, INDICATORERROR, INFOBARERROR, PYNOTIFYERROR
 
     import gtk
+    gtk.settings_get_default().set_property("gtk-error-bell", False)
 
     extension.category_register('dialog', Dialog.Dialog)
     extension.category_register('image chooser', ImageChooser.ImageChooser)
     extension.category_register('avatar chooser', AvatarChooser.AvatarChooser)
     extension.category_register('avatar', Avatar.Avatar)
-    extension.category_register('avatar manager', AvatarManager.AvatarManager)
     extension.category_register('avatar renderer', Renderers.AvatarRenderer)
 
-    extension.category_register('preferences', Preferences.Preferences)
+    extension.category_register('preferences', Preferences.Preferences,
+            single_instance=True)
     extension.category_register('login window', Login.Login)
     extension.category_register('connecting window', Login.ConnectingWindow)
     extension.category_register('window frame', Window.Window)
     extension.category_register('main window', MainWindow.MainWindow)
     extension.category_register('contact list', ContactList.ContactList)
     extension.category_register('nick renderer', Renderers.CellRendererPlus)
-    extension.register('nick renderer', gtk.CellRendererText)
     extension.register('nick renderer', Renderers.CellRendererNoPlus)
-    extension.register('nick renderer', Renderers.GtkCellRenderer)
     extension.category_register('user panel', UserPanel.UserPanel)
+
     if not INDICATORERROR:
         extension.category_register('tray icon', Indicator.Indicator)
         extension.register('tray icon', TrayIcon.TrayIcon)
-    else:    
-        extension.category_register('tray icon', TrayIcon.TrayIcon)        
+    else:
+        extension.category_register('tray icon', TrayIcon.TrayIcon)
+
     extension.category_register('debug window', DebugWindow.DebugWindow)
-    extension.category_register('nice bar', NiceBar.NiceBar)
+
+    if not INFOBARERROR:
+        extension.category_register('nice bar', InfoBar.NiceBar)
+        extension.register('nice bar', NiceBar.NiceBar)
+    else:
+        extension.category_register('nice bar', NiceBar.NiceBar)
 
     extension.category_register('main menu', MainMenu.MainMenu)
     extension.category_register('menu file', MainMenu.FileMenu)
@@ -121,6 +163,7 @@ def setup():
     extension.category_register('below panel', EmptyWidget.EmptyWidget)
     extension.category_register('below userlist', EmptyWidget.EmptyWidget)
 
+    extension.category_register('call widget', CallWidget.CallWindow)
     extension.category_register('conversation window', \
         ConversationManager.ConversationManager)
     extension.category_register('conversation', Conversation.Conversation)
@@ -143,9 +186,12 @@ def setup():
     else:
         extension.category_register('conversation output', TextBox.OutputText)
 
-    extension.category_register(('notificationGUI'), GtkNotification.gtkNotification)
-    try:
-        import PyNotification
+    if not PYNOTIFYERROR:
+        extension.category_register(('notificationGUI'), ThemeNotification.themeNotification)
         extension.register(('notificationGUI'), PyNotification.pyNotification)
-    except:
-        pass
+        extension.register(('notificationGUI'), GtkNotification.gtkNotification)
+    else: #leave this here for Windows users!
+        extension.category_register(('notificationGUI'), GtkNotification.gtkNotification)
+    
+    extension.category_register('picture handler', PictureHandler.PictureHandler)
+

@@ -1,11 +1,31 @@
 '''a module that contains a class that describes a adium theme'''
+# -*- coding: utf-8 -*-
+
+#    This file is part of emesene.
+#
+#    emesene is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    emesene is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with emesene; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
 import re
 import os
-import time
-
+import urllib
+import time, calendar
+import datetime
 import xml.sax.saxutils
 
 import parsers
+import MarkupParser
 
 class AdiumTheme(object):
     '''a class that contains information of a adium theme
@@ -52,7 +72,7 @@ class AdiumTheme(object):
         self.outgoing_next = read_file(self.outgoing_path,
                 'NextContent.html')
 
-    def format_incoming(self, msg):
+    def format_incoming(self, msg, style=None, cedict={}, cedir=None):
         '''return a string containing the template for the incoming message
         with the vars replaced
         '''
@@ -70,9 +90,9 @@ class AdiumTheme(object):
         else:
             template = self.incoming
 
-        return self.replace(template, msg)
+        return self.replace(template, msg, style, cedict, cedir)
 
-    def format_outgoing(self, msg):
+    def format_outgoing(self, msg, style=None, cedict={}, cedir=None):
         '''return a string containing the template for the outgoing message
         with the vars replaced
         '''
@@ -96,23 +116,43 @@ class AdiumTheme(object):
         else:
             template = self.outgoing
 
-        return self.replace(template, msg)
+        return self.replace(template, msg, style, cedict, cedir)
 
-    def replace(self, template, msg):
+    def replace(self, template, msg, style=None, cedict={}, cedir=None):
         '''replace the variables on template for the values on msg
         '''
+
+        msgtext = MarkupParser.replace_emotes(escape(msg.message), cedict, cedir, msg.sender)
+        msgtext = MarkupParser.urlify(msgtext)
+        image_path = escape(path_to_url(msg.image_path))
+        status_path = escape(path_to_url(msg.status_path))
+
+        if style is not None:
+            msgtext = style_message(msgtext, style)
+
         template = template.replace('%sender%', escape(msg.alias))
         template = template.replace('%senderScreenName%', escape(msg.sender))
         template = template.replace('%senderDisplayName%',
             escape(msg.display_name))
-        template = template.replace('%userIconPath%', escape(msg.image_path))
+        template = template.replace('%userIconPath%', image_path)
         template = template.replace('%senderStatusIcon%',
-            escape(msg.status_path))
+            status_path)
         template = template.replace('%messageDirection%',
             escape(msg.direction))
-        template = template.replace('%message%', escape(msg.message))
-        template = template.replace('%time%',
-            escape(time.strftime(self.timefmt)))
+        template = template.replace('%message%', msgtext)
+
+        if msg.timestamp is None:
+            template = template.replace('%time%',
+                escape(time.strftime(self.timefmt)))
+        else:
+            def utc_to_local(t):
+                secs = calendar.timegm(t)
+                return time.localtime(secs)
+            l_time = utc_to_local(msg.timestamp.timetuple()) #time.struct_time
+            d_time = datetime.datetime.fromtimestamp(time.mktime(l_time))
+            template = template.replace('%time%',
+                escape(d_time.strftime('%x %X')))
+
         template = re.sub("%time{(.*?)}%", replace_time, template)
         template = template.replace('%shortTime%',
             escape(time.strftime("%H:%M")))
@@ -144,14 +184,16 @@ class AdiumTheme(object):
     def get_body(self, source, target, target_display, source_img, target_img):
         '''return the template to put as html content
         '''
-        template = read_file(os.path.join("gui", "base", "template.html"))
-        css_path = "file://" + os.path.join(self.resources_path, "main.css")
+        path = urljoin("gui", "base", "template.html")
+        resources_url = path_to_url(self.resources_path)
+        template = read_file(path)
+        css_path = urljoin(resources_url, "main.css")
         variant_name = self.info.get('DefaultVariant', None)
-        template = template.replace("%@", "file://" + self.resources_path + "/", 1)
+        template = template.replace("%@", resources_url + "/", 1)
         template = template.replace("%@", css_path, 1)
 
         if variant_name is not None:
-            variant_css_path = "file://" + os.path.join(self.resources_path,
+            variant_css_path = "file://" + urljoin(resources_url,
                     "Variants", variant_name + ".css")
             variant_tag = '<style id="mainStyle" type="text/css"' + \
                 'media="screen,print">	@import url( "' + variant_css_path + '" ); </style>'
@@ -186,14 +228,22 @@ def read_file(*args):
 
     return None
 
+def urljoin(*args):
+    return "/".join(list(args))
+
 __dic = {
-    '\"'    :    '&quot;',
-    '\''    :    '&apos;'
+    '\"': '&quot;',
+    '\'': '&apos;',
+    '\\': '\\\\',
+    '\r\n': '<br>', #windows
+    '\r': '<br>', #osx
+    '\n': '<br>' #linux
 }
 
 __dic_inv = {
-    '&quot;'    :'\"',
-    '&apos;'    :'\''
+    '&quot;' :'\"',
+    '&apos;' :'\'',
+    '<br>':    '\n'
 }
 
 def escape(string_):
@@ -208,3 +258,17 @@ def replace_time(match):
     '''replace the format of the time to it's value'''
     return time.strftime(match.groups()[0])
 
+def style_message(msgtext, style):
+    '''add html markupt to msgtext to format the style of the message'''
+    return '<span style="%s">%s</span>' % (style.to_css(), msgtext)
+
+def path_to_url(path):
+    if os.name == "nt":
+        # on windows os.path.join uses backslashes
+        path = path.replace("\\", "/")
+        path = path[2:]
+
+    path = urllib.quote(path)
+    path = "file://" + path
+
+    return path
